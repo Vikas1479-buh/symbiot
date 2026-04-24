@@ -6,8 +6,9 @@ import pytesseract
 from PIL import Image
 from pdf2image import convert_from_path
 import cv2
+from docx import Document
 
-# ⚠️ SET PATHS
+# PATHS
 pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 POPPLER_PATH = r'C:\Users\vikas\Downloads\Release-25.12.0-0\poppler-25.12.0\Library\bin'
 
@@ -18,21 +19,32 @@ UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 
-# 🔍 DETECT
+# 🔍 ADVANCED DETECTION
 def detect_sensitive_data(text):
-    patterns = [
-        r'\b\d{12}\b',
-        r'\b\d{4}\s?\d{4}\s?\d{4}\b',
-        r'\b[A-Z]{5}[0-9]{4}[A-Z]\b',
-        r'\b\d{10}\b'
-    ]
-    found = []
-    for p in patterns:
-        found += re.findall(p, text)
-    return list(set(found))
+    text = text.replace("\n", " ")
+
+    patterns = {
+        "Aadhaar": r'\b\d{4}\s?\d{4}\s?\d{4}\b',
+        "PAN": r'\b[A-Z]{5}[0-9]{4}[A-Z]\b',
+        "Phone": r'\b[6-9]\d{9}\b',
+        "Email": r'\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b',
+        "Credit Card": r'\b(?:\d{4}[-\s]?){3}\d{4}\b',
+        "Passport": r'\b[A-Z][0-9]{7}\b',
+        "IFSC": r'\b[A-Z]{4}0[A-Z0-9]{6}\b',
+        "Bank Account": r'\b\d{9,18}\b'
+    }
+
+    detected = {}
+
+    for key, pattern in patterns.items():
+        matches = re.findall(pattern, text)
+        if matches:
+            detected[key] = list(set(matches))
+
+    return detected
 
 
-# 🖼️ MASK IMAGE
+# 🖼 MASK IMAGE
 def mask_image(filepath, values):
     img = cv2.imread(filepath)
     data = pytesseract.image_to_data(img, output_type=pytesseract.Output.DICT)
@@ -76,56 +88,113 @@ def home():
     return "Backend running 🚀"
 
 
-# 🖼 IMAGE API
-@app.route('/upload-image', methods=['POST'])
-def upload_image():
+# 🚀 MAIN
+@app.route('/upload', methods=['POST'])
+def upload():
     try:
         file = request.files['file']
+        file_type = request.form.get("type")
         path = os.path.join(UPLOAD_FOLDER, file.filename)
         file.save(path)
 
-        text = pytesseract.image_to_string(Image.open(path))
-        detected = detect_sensitive_data(text)
-
-        masked = mask_image(path, detected) if detected else None
-
-        return jsonify({
-            "image": f"http://127.0.0.1:5000/image/{masked}",
-            "download": f"http://127.0.0.1:5000/download/{masked}"
-        })
-
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-# 📄 PDF API
-@app.route('/upload-pdf', methods=['POST'])
-def upload_pdf():
-    try:
-        file = request.files['file']
-        path = os.path.join(UPLOAD_FOLDER, file.filename)
-        file.save(path)
-
-        images = convert_from_path(path, poppler_path=POPPLER_PATH)
-
-        masked_imgs = []
-
-        for i, img in enumerate(images):
-            temp = os.path.join(UPLOAD_FOLDER, f"temp_{i}.png")
-            img.save(temp)
-
-            text = pytesseract.image_to_string(img)
+        # 🖼 IMAGE
+        if file_type == "image":
+            text = pytesseract.image_to_string(Image.open(path))
             detected = detect_sensitive_data(text)
 
-            masked_name = mask_image(temp, detected)
-            masked_imgs.append(Image.open(os.path.join(UPLOAD_FOLDER, masked_name)))
+            all_values = []
+            for v in detected.values():
+                all_values.extend(v)
 
-        pdf_path = os.path.join(UPLOAD_FOLDER, "masked.pdf")
-        masked_imgs[0].save(pdf_path, save_all=True, append_images=masked_imgs[1:])
+            masked = mask_image(path, all_values)
 
-        return jsonify({
-            "download": "http://127.0.0.1:5000/download/masked.pdf"
-        })
+            return jsonify({
+                "type": "image",
+                "detected": detected,
+                "preview": f"http://127.0.0.1:5000/image/{masked}",
+                "download": f"http://127.0.0.1:5000/download/{masked}"
+            })
+
+        # 📄 PDF
+        elif file_type == "pdf":
+            images = convert_from_path(path, poppler_path=POPPLER_PATH)
+            masked_imgs = []
+            detected_all = {}
+
+            for i, img in enumerate(images):
+                temp = os.path.join(UPLOAD_FOLDER, f"temp_{i}.png")
+                img.save(temp)
+
+                text = pytesseract.image_to_string(img)
+                detected = detect_sensitive_data(text)
+
+                for k, v in detected.items():
+                    detected_all.setdefault(k, []).extend(v)
+
+                all_values = []
+                for v in detected.values():
+                    all_values.extend(v)
+
+                masked_name = mask_image(temp, all_values)
+                masked_imgs.append(Image.open(os.path.join(UPLOAD_FOLDER, masked_name)))
+
+            pdf_path = os.path.join(UPLOAD_FOLDER, "masked.pdf")
+            masked_imgs[0].save(pdf_path, save_all=True, append_images=masked_imgs[1:])
+
+            return jsonify({
+                "type": "pdf",
+                "detected": detected_all,
+                "download": "http://127.0.0.1:5000/download/masked.pdf"
+            })
+
+        # 📝 TXT
+        elif file_type == "txt":
+            with open(path, 'r', encoding='utf-8') as f:
+                text = f.read()
+
+            detected = detect_sensitive_data(text)
+
+            masked_text = text
+            for values in detected.values():
+                for val in values:
+                    masked_text = masked_text.replace(val, "XXXX")
+
+            txt_path = os.path.join(UPLOAD_FOLDER, "masked.txt")
+            with open(txt_path, 'w', encoding='utf-8') as f:
+                f.write(masked_text)
+
+            return jsonify({
+                "type": "txt",
+                "detected": detected,
+                "download": "http://127.0.0.1:5000/download/masked.txt"
+            })
+
+        # 📄 DOCX
+        elif file_type == "docx":
+            doc = Document(path)
+            text = "\n".join([p.text for p in doc.paragraphs])
+
+            detected = detect_sensitive_data(text)
+
+            masked_text = text
+            for values in detected.values():
+                for val in values:
+                    masked_text = masked_text.replace(val, "XXXX")
+
+            new_doc = Document()
+            new_doc.add_paragraph(masked_text)
+
+            docx_path = os.path.join(UPLOAD_FOLDER, "masked.docx")
+            new_doc.save(docx_path)
+
+            return jsonify({
+                "type": "docx",
+                "detected": detected,
+                "download": "http://127.0.0.1:5000/download/masked.docx"
+            })
+
+        else:
+            return jsonify({"error": "Invalid type"}), 400
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
