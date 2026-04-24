@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Symbiot AI</title>
+
+<style>
+body {
+    margin:0;
+    font-family: 'Segoe UI', sans-serif;
+    background: radial-gradient(circle at top, #0b0c2a, #000);
+    color:white;
+}
+
+/* LIGHT MODE */
+.light {
+    background:#f5f5f5;
+    color:black;
+}
+
+/* STAR EFFECT */
+body::after {
+    content:"";
+    position:fixed;
+    width:100%;
+    height:100%;
+    background:url('https://www.transparenttextures.com/patterns/stardust.png');
+    opacity:0.3;
+    pointer-events:none;
+}
+
+.light::after {
+    display:none;
+}
+
+.container {
+    max-width:600px;
+    margin:auto;
+    padding:40px;
+    text-align:center;
+}
+
+/* TITLE */
+h1 {
+    margin-bottom:30px;
+    font-size:32px;
+}
+
+/* FILE INPUT */
+input {
+    margin-top:10px;
+    margin-bottom:10px;
+}
+
+/* BUTTON STYLE */
+button {
+    padding:14px;
+    width:80%;
+    margin-top:15px;
+    border:none;
+    border-radius:10px;
+    font-size:16px;
+    font-weight:600;
+    background: linear-gradient(135deg, #10a37f, #0e8f6c);
+    color:white;
+    cursor:pointer;
+    transition: all 0.3s ease;
+}
+
+/* HOVER EFFECT */
+button:hover {
+    transform: scale(1.05);
+    box-shadow: 0 0 15px rgba(16,163,127,0.6);
+}
+
+/* RESULT BOX */
+#result {
+    margin-top:30px;
+}
+
+/* IMAGE */
+img {
+    max-width:100%;
+    margin-top:20px;
+    border-radius:12px;
+}
+
+/* DOWNLOAD MESSAGE */
+.success {
+    margin-top:15px;
+    color:#1ed1a1;
+    font-weight:bold;
+}
+
+/* TOGGLE BUTTON */
+.toggle {
+    position:absolute;
+    top:20px;
+    right:20px;
+    width:auto;
+    padding:10px 15px;
+}
+</style>
+</head>
+
+<body>
+
+<button class="toggle" onclick="toggleTheme()" id="themeBtn">🌙 Dark</button>
+
+<div class="container">
+
+<h1>🔒  Privacy X</h1>
+
+<!-- IMAGE -->
+<input type="file" id="imgFile">
+<br>
+<button onclick="uploadImage()">Upload Image</button>
+
+<br><br>
+
+<!-- PDF -->
+<input type="file" id="pdfFile">
+<br>
+<button onclick="uploadPDF()">Upload PDF</button>
+
+<div id="result"></div>
+
+</div>
+
+<script>
+
+function toggleTheme(){
+    document.body.classList.toggle("light");
+
+    let btn = document.getElementById("themeBtn");
+
+    if(document.body.classList.contains("light")){
+        btn.innerText = "☀️ Light";
+    } else {
+        btn.innerText = "🌙 Dark";
+    }
+}
+
+
+// 🖼 IMAGE
+async function uploadImage(){
+    let file = document.getElementById("imgFile").files[0];
+    let resDiv = document.getElementById("result");
+
+    if(!file){
+        alert("Select image");
+        return;
+    }
+
+    resDiv.innerHTML = "⏳ Processing Image...";
+
+    let form = new FormData();
+    form.append("file", file);
+
+    let res = await fetch("http://127.0.0.1:5000/upload-image", {
+        method:"POST",
+        body:form
+    });
+
+    let data = await res.json();
+
+    resDiv.innerHTML = `
+        <img src="${data.image}?t=${Date.now()}">
+        <br>
+        <a href="${data.download}" onclick="showSuccess()">
+            <button>⬇ Download Image</button>
+        </a>
+        <div id="msg" class="success"></div>
+    `;
+}
+
+
+// 📄 PDF
+async function uploadPDF(){
+    let file = document.getElementById("pdfFile").files[0];
+    let resDiv = document.getElementById("result");
+
+    if(!file){
+        alert("Select PDF");
+        return;
+    }
+
+    resDiv.innerHTML = "⏳ Processing PDF...";
+
+    let form = new FormData();
+    form.append("file", file);
+
+    let res = await fetch("http://127.0.0.1:5000/upload-pdf", {
+        method:"POST",
+        body:form
+    });
+
+    let data = await res.json();
+
+    resDiv.innerHTML = `
+        <p>✅ PDF Masked Successfully</p>
+        <a href="${data.download}" onclick="showSuccess()">
+            <button>⬇ Download PDF</button>
+        </a>
+        <div id="msg" class="success"></div>
+    `;
+}
+
+
+// ✅ SUCCESS MESSAGE
+function showSuccess(){
+    setTimeout(()=>{
+        let msg = document.getElementById("msg");
+        if(msg){
+            msg.innerText = "✅ Download Successful";
+        }
+    }, 500);
+}
+
+</script>
+
+</body>
+</html>
